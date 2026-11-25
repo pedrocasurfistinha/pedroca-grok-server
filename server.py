@@ -9,6 +9,7 @@ from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 from grok_pool import GrokCookiePool
+from push_scheduler import WebPushScheduler
 from telegram_bot import TelegramCookieAdminBot
 
 COACH_API_KEY = os.getenv("COACH_API_KEY", "").strip()
@@ -30,6 +31,7 @@ def _on_cookie_discarded(mask: str, reason: str, remaining: int) -> None:
 
 pool = GrokCookiePool(on_cookie_discarded=_on_cookie_discarded)
 bot = TelegramCookieAdminBot(pool)
+push_scheduler = WebPushScheduler()
 bot_ref = bot
 
 
@@ -44,11 +46,14 @@ async def lifespan(_app: FastAPI):
         asyncio.create_task(asyncio.to_thread(pool.add_ssos, initial_ssos))
 
     bot_task = asyncio.create_task(bot.run_forever())
+    push_task = asyncio.create_task(push_scheduler.run_forever())
     try:
         yield
     finally:
         bot.stop()
+        push_scheduler.stop()
         bot_task.cancel()
+        push_task.cancel()
 
 
 app = FastAPI(title="pedroca-grok-coach", lifespan=lifespan)
@@ -76,6 +81,7 @@ def health():
         "active_cookies": st["total_active"],
         "ready_now": st["ready_now"],
         "gemini_fallback": st["gemini_fallback"],
+        "web_push_enabled": push_scheduler.enabled,
     }
 
 
